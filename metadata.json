@@ -1,0 +1,7 @@
+{
+  "name": "Zmanim Sunrise Countdown",
+  "description": "A multi-stage countdown timer for sunrise prayers (Zmanim), automatically detecting sunrise based on user location. Features manual time override and audio/visual alerts for each stage.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
