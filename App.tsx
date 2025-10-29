@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { STAGES, NOTIFICATION_SOUND } from './constants';
+import { DEFAULT_STAGES, NOTIFICATION_SOUND } from './constants';
 import type { Stage, CalculatedStage } from './types';
 
 // --- Helper Functions ---
@@ -50,12 +49,20 @@ interface StagesListProps {
   stages: CalculatedStage[];
   nextStageIndex: number;
   sunriseTime: Date;
+  isEditing: boolean;
+  onToggleEdit: () => void;
+  onStageUpdate: (index: number, newOffsets: Partial<Stage>) => void;
 }
-const StagesList: React.FC<StagesListProps> = ({ stages, nextStageIndex, sunriseTime }) => {
+const StagesList: React.FC<StagesListProps> = ({ stages, nextStageIndex, sunriseTime, isEditing, onToggleEdit, onStageUpdate }) => {
     return (
         <div className="w-full max-w-md mt-10 bg-gray-900/50 p-4 rounded-xl backdrop-blur-sm border border-gray-700">
             <div className="flex justify-between items-center pb-3 border-b border-gray-600 mb-3">
-                <h3 className="text-lg font-semibold text-gray-200" dir="rtl">זמני היום</h3>
+                <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-semibold text-gray-200" dir="rtl">זמני היום</h3>
+                    <button onClick={onToggleEdit} className="text-xs font-bold py-1 px-3 rounded-md transition-colors bg-gray-700 hover:bg-gray-600 text-gray-200">
+                        {isEditing ? 'סיום' : 'עריכה'}
+                    </button>
+                </div>
                 <div className="flex items-center gap-2 text-yellow-400">
                     <SunIcon className="w-5 h-5" />
                     <span className="font-mono">{formatToLocalTime(sunriseTime)}</span>
@@ -65,11 +72,36 @@ const StagesList: React.FC<StagesListProps> = ({ stages, nextStageIndex, sunrise
                 {stages.map((stage, index) => (
                     <div
                         key={stage.name}
-                        className={`flex justify-between items-center p-3 rounded-lg transition-all duration-300 ${index === nextStageIndex ? 'bg-yellow-500/20 text-yellow-300 ring-2 ring-yellow-500' : 'bg-gray-800/60 text-gray-300'}`}
+                        className={`flex justify-between items-center p-3 rounded-lg transition-all duration-300 ${index === nextStageIndex && !isEditing ? 'bg-yellow-500/20 text-yellow-300 ring-2 ring-yellow-500' : 'bg-gray-800/60 text-gray-300'}`}
                         dir="rtl"
                     >
-                        <span className="font-medium">{stage.name}</span>
-                        <span className="font-mono tracking-wider">{formatToLocalTime(stage.time)}</span>
+                        <span className="font-medium flex-shrink-0">{stage.name}</span>
+                        {isEditing ? (
+                            <div className="flex items-center gap-2 text-sm" dir="ltr">
+                                <span className="text-gray-400 text-xs">לפני הנץ</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    aria-label={`שניות עבור ${stage.name}`}
+                                    value={stage.offsetSeconds !== undefined ? Math.abs(stage.offsetSeconds) : ''}
+                                    placeholder="0"
+                                    onChange={(e) => onStageUpdate(index, { offsetSeconds: -parseInt(e.target.value, 10) || 0 })}
+                                    className="w-12 bg-gray-700 text-white rounded p-1 text-center font-mono"
+                                />
+                                <span className="text-gray-400">ש'</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    aria-label={`דקות עבור ${stage.name}`}
+                                    value={Math.abs(stage.offsetMinutes)}
+                                    onChange={(e) => onStageUpdate(index, { offsetMinutes: -parseInt(e.target.value, 10) || 0 })}
+                                    className="w-12 bg-gray-700 text-white rounded p-1 text-center font-mono"
+                                />
+                                <span className="text-gray-400">ד'</span>
+                            </div>
+                        ) : (
+                            <span className="font-mono tracking-wider">{formatToLocalTime(stage.time)}</span>
+                        )}
                     </div>
                 ))}
             </div>
@@ -110,14 +142,37 @@ const ManualTimeInput: React.FC<ManualTimeInputProps> = ({ value, onChange, onSu
 
 // --- Main App Component ---
 
+const STAGES_STORAGE_KEY = 'zmanim_stages';
+
 const App: React.FC = () => {
     const [sunriseTime, setSunriseTime] = useState<Date | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const [currentTime, setCurrentTime] = useState<Date>(new Date());
     const [manualSunriseInput, setManualSunriseInput] = useState<string>('');
+    const [isEditingStages, setIsEditingStages] = useState(false);
+    const [stages, setStages] = useState<Stage[]>(() => {
+        try {
+            const storedStages = localStorage.getItem(STAGES_STORAGE_KEY);
+            if (storedStages) {
+                return JSON.parse(storedStages);
+            }
+        } catch (error) {
+            console.error("Failed to parse stages from localStorage", error);
+        }
+        return DEFAULT_STAGES;
+    });
+
     const audioPlayer = useRef<HTMLAudioElement | null>(null);
     const playedNotifications = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(STAGES_STORAGE_KEY, JSON.stringify(stages));
+        } catch (error) {
+            console.error("Failed to save stages to localStorage", error);
+        }
+    }, [stages]);
 
     useEffect(() => {
         audioPlayer.current = new Audio(NOTIFICATION_SOUND);
@@ -169,12 +224,12 @@ const App: React.FC = () => {
 
     const calculatedStages = useMemo<CalculatedStage[] | null>(() => {
         if (!sunriseTime) return null;
-        return STAGES.map(stage => {
+        return stages.map(stage => {
             const totalOffsetSeconds = (stage.offsetMinutes * 60) + (stage.offsetSeconds || 0);
             const stageTime = new Date(sunriseTime.getTime() + totalOffsetSeconds * 1000);
             return { ...stage, time: stageTime };
         });
-    }, [sunriseTime]);
+    }, [sunriseTime, stages]);
 
     const { nextStage, nextStageIndex, timeLeft } = useMemo(() => {
         if (!calculatedStages) return { nextStage: null, nextStageIndex: -1, timeLeft: 0 };
@@ -220,6 +275,14 @@ const App: React.FC = () => {
         setError(null);
     };
 
+    const handleStageUpdate = (index: number, newOffsets: Partial<Stage>) => {
+        setStages(currentStages =>
+            currentStages.map((stage, i) =>
+                i === index ? { ...stage, ...newOffsets } : stage
+            )
+        );
+    };
+
     if (loading) {
         return (
             <div className="bg-black min-h-screen text-white flex flex-col items-center justify-center p-4 font-sans text-center" dir="rtl">
@@ -238,7 +301,14 @@ const App: React.FC = () => {
                 {sunriseTime && calculatedStages ? (
                     <>
                         <CountdownDisplay timeLeft={timeLeft} nextStageName={nextStage?.name || null} />
-                        <StagesList stages={calculatedStages} nextStageIndex={nextStageIndex} sunriseTime={sunriseTime} />
+                        <StagesList 
+                            stages={calculatedStages} 
+                            nextStageIndex={nextStageIndex} 
+                            sunriseTime={sunriseTime}
+                            isEditing={isEditingStages}
+                            onToggleEdit={() => setIsEditingStages(prev => !prev)}
+                            onStageUpdate={handleStageUpdate}
+                        />
                     </>
                 ) : (
                     <div className="text-center">

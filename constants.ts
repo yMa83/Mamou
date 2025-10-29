@@ -1,7 +1,6 @@
-
 import { Stage } from './types';
 
-export const STAGES: Stage[] = [
+export const DEFAULT_STAGES: Stage[] = [
   { name: 'פתיחה', offsetMinutes: -45 },
   { name: 'הודו', offsetMinutes: -25 },
   { name: 'ישתבח', offsetMinutes: -10 },
